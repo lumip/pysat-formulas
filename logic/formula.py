@@ -3,6 +3,11 @@ from typing import Collection, Any, Union, Optional, Iterable
 from .synthesizer import Synthesizer
 
 class Formula(metaclass=ABCMeta):
+
+    @staticmethod
+    def from_copy(other: 'Formula') -> 'Formula':
+        return other.from_copy(other)
+
     @abstractmethod
     def synthesize(self, synthesizer: Synthesizer) -> Any:
         raise NotImplementedError()
@@ -33,6 +38,10 @@ class Constant(Literal):
         super().__init__()
         self.__value = value
 
+    @staticmethod
+    def from_copy(other: 'Constant') -> 'Constant':
+        return Constant(other.value)
+
     @property
     def value(self) -> bool:
         return self.__value
@@ -62,6 +71,10 @@ class Negation(Literal):
         super().__init__()
         self.__literal = literal
 
+    @staticmethod
+    def from_copy(other: 'Negation') -> 'Negation':
+        return Negation(other.__literal)
+
     def synthesize(self, synthesizer: Synthesizer) -> Any:
         return synthesizer.synthesize_negation(
             self.__literal.synthesize(synthesizer)
@@ -85,6 +98,10 @@ class Variable(Literal):
         super().__init__()
         self.__name = name
 
+    @staticmethod
+    def from_copy(other: 'Variable') -> 'Variable':
+        return Variable(other.name)
+
     @property
     def name(self) -> str:
         return self.__name
@@ -103,18 +120,62 @@ class Variable(Literal):
             return self.name == other.name
         return False
 
-class Clause(Formula):
+class Disjunction(Formula):
 
-    def __init__(self, literals: Collection[Literal]) -> None:
+    def __init__(self, subformulae: Collection[Formula]) -> None:
         super().__init__()
-        self.__literals = frozenset(literals)
+        self.__children = frozenset(subformulae)
+
+    @staticmethod
+    def from_copy(other: 'Disjunction') -> 'Disjunction':
+        return Disjunction(other.subformulae)
 
     def __len__(self) -> int:
-        return len(self.__literals)
+        return len(self.__children)
+
+    @property
+    def subformulae(self) -> Collection[Formula]:
+        return self.__children
+
+    def __add__(self, other: Formula) -> 'Disjunction':
+        if isinstance(other, Disjunction):
+            return Disjunction(self.subformulae | other.subformulae)    
+        return Disjunction(self.subformulae | {other})
+
+    def __mul__(self, other: Formula) -> 'Conjunction':
+        formula = Conjunction([self])
+        return formula * other
+
+    def synthesize(self, synthesizer: Synthesizer) -> Any:
+        raise NotImplementedError()
+
+    def to_cnf(self, synthesizer: Synthesizer) -> 'CNF':
+        raise NotImplementedError()
+
+    def __str__(self) -> str:
+        substrings = [str(formula) for formula in self.subformulae]
+        return "({})".format(" + ".join(substrings))
+
+    def __hash__(self) -> int:
+        return hash(self.subformulae)
+
+    def __eq__(self, other) -> bool:
+        if isinstance(other, Disjunction):
+            return self.subformulae == other.subformulae
+        return False
+
+class Clause(Disjunction):
+
+    def __init__(self, literals: Collection[Literal]) -> None:
+        super().__init__(literals)
+
+    @staticmethod
+    def from_copy(other: 'Clause') -> 'Clause':
+        return Clause(other.literals)
 
     @property
     def literals(self) -> Collection[Literal]:
-        return self.__literals
+        return self.subformulae
 
     def __add__(self, other: Union[Literal, 'Clause']) -> 'Clause':
         literals = set(self.literals)
@@ -138,60 +199,82 @@ class Clause(Formula):
     def to_cnf(self) -> 'CNF':
         return CNF([self])
 
+
+class Conjunction(Formula):
+
+    def __init__(self, subformulae: Collection[Formula]) -> None:
+        super().__init__()
+        self.__children = frozenset(subformulae)
+
+    @staticmethod
+    def from_copy(other: 'Conjunction') -> 'Conjunction':
+        return Conjunction(other.subformulae)
+
+    def __len__(self) -> int:
+        return len(self.__children)
+
+    @property
+    def subformulae(self) -> Collection[Formula]:
+        return self.__children
+
+    def __add__(self, other: Formula) -> 'Disjunction':
+        formula = Disjunction([self])
+        return formula + other
+
+    def __mul__(self, other: Formula) -> 'Conjunction':
+        if isinstance(other, Conjunction):
+            return Conjunction(self.subformulae | other.subformulae)
+        return Conjunction(self.subformulae | {other})
+
+    def synthesize(self, synthesizer: Synthesizer) -> Any:
+        raise NotImplementedError()
+
+    def to_cnf(self, synthesizer: Synthesizer) -> 'CNF':
+        raise NotImplementedError()
+
     def __str__(self) -> str:
-        literals = [str(literal) for literal in self.literals]
-        return "({})".format(" + ".join(literals))
+        substrings = [str(formula) for formula in self.subformulae]
+        return "({})".format(" * ".join(substrings))
 
     def __hash__(self) -> int:
-        return hash(self.literals)
+        return hash(self.subformulae)
 
-    def __eq__(self, other: 'Clause') -> bool:
-        if isinstance(other, Clause):
-            return self.literals == other.literals
+    def __eq__(self, other) -> bool:
+        if isinstance(other, Disjunction):
+            return self.subformulae == other.subformulae
         return False
 
-class CNF(Formula):
+
+class CNF(Conjunction):
 
     def __init__(self, clauses: Collection[Clause]) -> None:
-        super().__init__()
-        self.__clauses = frozenset(clauses)
+        super().__init__(clauses)
+
+    @staticmethod
+    def from_copy(other: 'CNF') -> 'CNF':
+        return CNF(other.clauses)
 
     @property
     def clauses(self) -> Collection[Clause]:
-        return self.__clauses
-
-    def __len__(self) -> int:
-        return len(self.__clauses)
+        return self.subformulae
 
     def synthesize(self, synthesizer: Synthesizer) -> Any:
         return synthesizer.synthesize_cnf(
-            clause.synthesize(synthesizer) for clause in self.__clauses
+            clause.synthesize(synthesizer) for clause in self.clauses
         )
 
     def to_cnf(self) -> 'CNF':
         return self
 
     def __mul__(self, other: Union[Literal, Clause, 'CNF']) -> 'CNF':
-        clauses = set(self.__clauses)
+        clauses = set(self.clauses)
         if isinstance(other, Literal):
             clauses |= {Clause([other])}
         elif isinstance(other, Clause):
             clauses |= {other}
         elif isinstance(other, CNF):
-            clauses |= set(other.__clauses)
+            clauses |= set(other.clauses)
         else:
             raise TypeError()
 
         return CNF(clauses)
-
-    def __str__(self) -> str:
-        clauses = [str(clause) for clause in self.clauses]
-        return " * ".join(clauses)
-
-    def __hash__(self) -> int:
-        return hash(self.clauses)
-
-    def __eq__(self, other: 'Formula') -> bool:
-        if isinstance(other, CNF):
-            return self.clauses == other.clauses
-        return False
