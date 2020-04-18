@@ -357,3 +357,70 @@ class FormulaNegation(Formula):
         if isinstance(other, FormulaNegation):
             return self.formula == other.formula
         return False
+
+class Implication(Formula):
+
+    def __init__(self, lhs: Formula, rhs: Formula):
+        super().__init__()
+        self.__lhs = lhs
+        self.__rhs = rhs
+
+    @property
+    def lhs(self) -> Formula:
+        return self.__lhs
+
+    @property
+    def rhs(self) -> Formula:
+        return self.__rhs
+
+    def tseytin_transform(self) -> Tuple['Literal', 'CNF']:
+        phi = -self.lhs + self.rhs
+        return phi.tseytin_transform()
+
+    def synthesize(self, synthesizer: Synthesizer) -> Any:
+        raise NotImplementedError
+        
+    def __hash__(self) -> int:
+        return 1213 * hash(self.lhs) + 229 * hash(self.rhs)
+
+    def __eq__(self, other) -> bool:
+        if isinstance(other, Implication):
+            return self.lhs == other.lhs and self.rhs == other.rhs
+        return False
+
+    def __str__(self) -> str:
+        return '({} -> {})'.format(str(self.lhs), str(self.rhs))
+
+class Equivalence(Formula):
+
+    def __init__(self, lhs: Formula, rhs: Formula):
+        super().__init__()
+        self.__lhs = lhs
+        self.__rhs = rhs
+
+    @property
+    def lhs(self) -> Formula:
+        return self.__lhs
+
+    @property
+    def rhs(self) -> Formula:
+        return self.__rhs
+
+    def tseytin_transform(self) -> Tuple['Literal', 'CNF']:
+        phi = Implication(self.lhs, self.rhs) * Implication(self.rhs, self.lhs)
+        return phi.tseytin_transform()
+
+    def synthesize(self, synthesizer: Synthesizer) -> Any:
+        raise NotImplementedError()
+        
+    def __hash__(self) -> int:
+        return 421 * hash(frozenset({self.lhs, self.rhs}))
+
+    def __eq__(self, other) -> bool:
+        if isinstance(other, Implication):
+            return (self.lhs == other.lhs and self.rhs == other.rhs) or (self.lhs == other.rhs and self.rhs == other.lhs)
+        return False
+
+    def __str__(self) -> str:
+        return '({} <-> {})'.format(str(self.lhs), str(self.rhs))
+    
