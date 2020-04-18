@@ -26,6 +26,14 @@ class Formula(metaclass=ABCMeta):
     def __repr__(self) -> str:
         return str(self)
 
+    def __mul__(self, other: 'Formula') -> 'Conjunction':
+        as_con = Conjunction([self])
+        return as_con * other
+
+    def __add__(self, other: 'Formula') -> 'Disjunction':
+        as_dis = Disjunction([self])
+        return as_dis + other
+
 class Literal(Formula):
 
     def __init__(self, name: str) -> None:
@@ -164,10 +172,6 @@ class Disjunction(Formula):
             return Disjunction(self.subformulae | other.subformulae)    
         return Disjunction(self.subformulae | {other})
 
-    def __mul__(self, other: Formula) -> 'Conjunction':
-        formula = Conjunction([self])
-        return formula * other
-
     def synthesize(self, synthesizer: Synthesizer) -> Any:
         raise NotImplementedError()
 
@@ -187,7 +191,7 @@ class Disjunction(Formula):
         s = Variable('__ts_dis_{}'.format(hash(self)))
         t_phis, cnfs = zip(*[phi.tseytin_transform() for phi in self.subformulae])
         cnf = CNF([Clause(t_phis) + -s])
-        cnf = reduce(lambda x, y: x * (s + -y), t_phis, cnf)
+        cnf = reduce(lambda x, t: x * (s + -t), t_phis, cnf)
         cnf = reduce(lambda x, y: x * y, cnfs, cnf)
         return s, cnf
 
@@ -272,11 +276,11 @@ class Conjunction(Formula):
         t_phis, cnfs = zip(*[phi.tseytin_transform() for phi in self.subformulae])
         s = Variable('__ts_con_{}'.format(hash(self)))
 
-        cnf = CNF([Clause([s])])
-        cnf *= reduce(lambda x, y: x + -y, t_phis, s)
-        cnf *= reduce(lambda x, y: x * (-s + y), t_phis)
+        cnf = reduce(lambda x, t: x + -t, t_phis, s) # s -> self
+        cnf *= reduce(lambda x, t: x * (-s + t), t_phis) # self -> s
 
-        cnf *= reduce(lambda x, y: x * y, cnfs, cnf)
+        cnf = reduce(lambda x, y: x * y, cnfs, cnf)
+        assert(isinstance(cnf, CNF))
         return s, cnf
 
 class CNF(Conjunction):

@@ -67,8 +67,11 @@ class PySATSynthesizer(Synthesizer):
             ]
         return assumptions
 
-    def get_known_variables(self) -> Collection[str]:
-        return [name for name in self.__ids_to_variables]
+    def get_known_variables(self, include_implicit: bool=False) -> Collection[str]:
+        names = [name for name in self.__ids_to_variables]
+        if not include_implicit:
+            names = [name for name in names if not str.startswith(name, '__ts_')]
+        return names
 
     def synthesize(self, formula: Union[Literal, Clause, CNF]) -> Collection[Collection[int]]:
         if isinstance(formula, Literal):
