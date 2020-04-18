@@ -16,11 +16,11 @@ class Synthesizer(metaclass=ABCMeta):
         raise NotImplementedError()
 
     @abstractmethod
-    def synthesize_disjunction(self, literals: Iterable[Any]) -> Any:
+    def synthesize_clause(self, literals: Iterable[Any]) -> Any:
         raise NotImplementedError()
 
     @abstractmethod
-    def synthesize_conjunction(self, clauses: Iterable[Any]) -> Any:
+    def synthesize_cnf(self, clauses: Iterable[Any]) -> Any:
         raise NotImplementedError()
 
 

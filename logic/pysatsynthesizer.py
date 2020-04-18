@@ -1,6 +1,6 @@
 from typing import Any, List, Collection, Iterable, Union, Dict, Optional
 from .synthesizer import Synthesizer
-from .formula import Disjunction, Conjunction, Literal, Constant, Variable
+from .formula import Clause, CNF, Literal, Constant, Variable
 
 class PySATSynthesizer(Synthesizer):
 
@@ -24,10 +24,10 @@ class PySATSynthesizer(Synthesizer):
     def synthesize_true(self) -> int:
         return self.__constant_true_id
     
-    def synthesize_disjunction(self, literals: Iterable[int]) -> List[int]:
+    def synthesize_clause(self, literals: Iterable[int]) -> List[int]:
         return [literal for literal in literals]
 
-    def synthesize_conjunction(self, clauses: Iterable[List[int]]) -> List[List[int]]:
+    def synthesize_cnf(self, clauses: Iterable[List[int]]) -> List[List[int]]:
         formula = []
         for clause in clauses:
             formula.append(clause)
@@ -67,9 +67,9 @@ class PySATSynthesizer(Synthesizer):
     def get_known_variables(self) -> Collection[str]:
         return [name for name in self.__ids_to_variables]
 
-    def synthesize(self, formula: Union[Literal, Disjunction, Conjunction]) -> Collection[Collection[int]]:
+    def synthesize(self, formula: Union[Literal, Clause, CNF]) -> Collection[Collection[int]]:
         if isinstance(formula, Literal):
-            formula = Disjunction([formula])
-        if isinstance(formula, Disjunction):
-            formula = Conjunction([formula])
+            formula = Clause([formula])
+        if isinstance(formula, Clause):
+            formula = CNF([formula])
         return formula.synthesize(self)

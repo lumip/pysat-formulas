@@ -5,20 +5,27 @@ from .synthesizer import Synthesizer
 class Formula(metaclass=ABCMeta):
     @abstractmethod
     def synthesize(self, synthesizer: Synthesizer) -> Any:
-        pass
+        raise NotImplementedError()
+
+    @abstractmethod
+    def to_cnf(self) -> 'CNF':
+        raise NotImplementedError()
 
 class Literal(Formula):
 
     def __neg__(self) -> 'Literal':
         return Negation(self)
 
-    def __add__(self, other: Union['Literal', 'Disjunction']) -> 'Disjunction':
-        as_dis = Disjunction([self])
+    def __add__(self, other: Union['Literal', 'Clause']) -> 'Clause':
+        as_dis = Clause([self])
         return as_dis + other
 
-    def __mul__(self, other: Union['Literal', 'Disjunction', 'Conjunction']) -> 'Conjunction':
-        as_dis = Disjunction([self])
+    def __mul__(self, other: Union['Literal', 'Clause', 'CNF']) -> 'CNF':
+        as_dis = Clause([self])
         return as_dis * other
+
+    def to_cnf(self) -> 'CNF':
+        return Clause([self]).to_cnf()
 
 class Constant(Literal):
 
@@ -96,7 +103,7 @@ class Variable(Literal):
             return self.name == other.name
         return False
 
-class Disjunction(Formula):
+class Clause(Formula):
 
     def __init__(self, literals: Collection[Literal]) -> None:
         super().__init__()
@@ -109,24 +116,27 @@ class Disjunction(Formula):
     def literals(self) -> Collection[Literal]:
         return self.__literals
 
-    def __add__(self, other: Union[Literal, 'Disjunction']) -> 'Disjunction':
+    def __add__(self, other: Union[Literal, 'Clause']) -> 'Clause':
         literals = set(self.literals)
         if isinstance(other, Literal):
             literals |= {other}
-        elif isinstance(other, Disjunction):
+        elif isinstance(other, Clause):
             literals |= other.literals
         else:
             raise TypeError()
-        return Disjunction(literals)
+        return Clause(literals)
 
-    def __mul__(self, other: Union[Literal, 'Disjunction', 'Conjunction']) -> 'Conjunction':
-        as_con = Conjunction([self])
+    def __mul__(self, other: Union[Literal, 'Clause', 'CNF']) -> 'CNF':
+        as_con = CNF([self])
         return as_con * other
 
     def synthesize(self, synthesizer: Synthesizer) -> Any:
-        return synthesizer.synthesize_disjunction(
+        return synthesizer.synthesize_clause(
             literal.synthesize(synthesizer) for literal in self.literals
         )
+
+    def to_cnf(self) -> 'CNF':
+        return CNF([self])
 
     def __str__(self) -> str:
         literals = [str(literal) for literal in self.literals]
@@ -135,41 +145,44 @@ class Disjunction(Formula):
     def __hash__(self) -> int:
         return hash(self.literals)
 
-    def __eq__(self, other: 'Disjunction') -> bool:
-        if isinstance(other, Disjunction):
+    def __eq__(self, other: 'Clause') -> bool:
+        if isinstance(other, Clause):
             return self.literals == other.literals
         return False
 
-class Conjunction(Formula):
+class CNF(Formula):
 
-    def __init__(self, clauses: Collection[Disjunction]) -> None:
+    def __init__(self, clauses: Collection[Clause]) -> None:
         super().__init__()
         self.__clauses = frozenset(clauses)
 
     @property
-    def clauses(self) -> Collection[Disjunction]:
+    def clauses(self) -> Collection[Clause]:
         return self.__clauses
 
     def __len__(self) -> int:
         return len(self.__clauses)
 
     def synthesize(self, synthesizer: Synthesizer) -> Any:
-        return synthesizer.synthesize_conjunction(
+        return synthesizer.synthesize_cnf(
             clause.synthesize(synthesizer) for clause in self.__clauses
         )
 
-    def __mul__(self, other: Union[Literal, Disjunction, 'Conjunction']) -> 'Conjunction':
+    def to_cnf(self) -> 'CNF':
+        return self
+
+    def __mul__(self, other: Union[Literal, Clause, 'CNF']) -> 'CNF':
         clauses = set(self.__clauses)
         if isinstance(other, Literal):
-            clauses |= {Disjunction([other])}
-        elif isinstance(other, Disjunction):
+            clauses |= {Clause([other])}
+        elif isinstance(other, Clause):
             clauses |= {other}
-        elif isinstance(other, Conjunction):
+        elif isinstance(other, CNF):
             clauses |= set(other.__clauses)
         else:
             raise TypeError()
 
-        return Conjunction(clauses)
+        return CNF(clauses)
 
     def __str__(self) -> str:
         clauses = [str(clause) for clause in self.clauses]
@@ -179,6 +192,6 @@ class Conjunction(Formula):
         return hash(self.clauses)
 
     def __eq__(self, other: 'Formula') -> bool:
-        if isinstance(other, Conjunction):
+        if isinstance(other, CNF):
             return self.clauses == other.clauses
         return False
