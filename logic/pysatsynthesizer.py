@@ -38,7 +38,7 @@ class PySATSynthesizer(Synthesizer):
     #         return 'True'
     #     return self.__ids_to_variables[var_id-self.__variable_id_offset]
 
-    def translate(self, var_ids: Iterable[int]) -> Collection[Literal]:
+    def translate(self, var_ids: Iterable[int], include_implicit: bool=False) -> Collection[Literal]:
         def translate_single(var_id: int) -> Literal:
             negate = var_id < 0
             var_id = -var_id if negate else var_id
@@ -48,7 +48,10 @@ class PySATSynthesizer(Synthesizer):
             var = Variable(self.__ids_to_variables[var_id - self.__variable_id_offset])
             return -var if negate else var
             
-        return [translate_single(idx) for idx in var_ids if abs(idx) >= self.__variable_id_offset]
+        literals = [translate_single(idx) for idx in var_ids if abs(idx) >= self.__variable_id_offset]
+        if not include_implicit:
+            literals = [literal for literal in literals if not str.startswith(literal.name, '__ts_')]
+        return literals
 
     # def get_assumptions(self, assignments=None: Dict[Union[str, Variable], bool]) -> List[int]:
     #     assumptions = [self.__constant_true_id]

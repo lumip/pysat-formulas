@@ -1,5 +1,6 @@
 from abc import abstractmethod, ABCMeta
-from typing import Collection, Any, Union, Optional, Iterable
+from typing import Collection, Any, Union, Optional, Iterable, Tuple
+from functools import reduce
 from .synthesizer import Synthesizer
 
 class Formula(metaclass=ABCMeta):
@@ -13,13 +14,29 @@ class Formula(metaclass=ABCMeta):
         raise NotImplementedError()
 
     @abstractmethod
-    def to_cnf(self) -> 'CNF':
+    def tseytin_transform(self) -> Tuple['Literal', 'CNF']:
         raise NotImplementedError()
+
+    def to_cnf(self) -> 'CNF':
+        return self.tseytin_transform()[1]
+
+    def __neg__(self) -> 'Formula':
+        return FormulaNegation(self)
+
+    def __repr__(self) -> str:
+        return str(self)
 
 class Literal(Formula):
 
+    def __init__(self, name: str) -> None:
+        self.__name = name
+
+    @property
+    def name(self) -> str:
+        return self.__name
+
     def __neg__(self) -> 'Literal':
-        return Negation(self)
+        return LiteralNegation(self)
 
     def __add__(self, other: Union['Literal', 'Clause']) -> 'Clause':
         as_dis = Clause([self])
@@ -32,10 +49,13 @@ class Literal(Formula):
     def to_cnf(self) -> 'CNF':
         return Clause([self]).to_cnf()
 
+    def tseytin_transform(self) -> Tuple['Literal', 'CNF']:
+        return self, CNF([])
+
 class Constant(Literal):
 
     def __init__(self, value: bool) -> None:
-        super().__init__()
+        super().__init__(str(value))
         self.__value = value
 
     @staticmethod
@@ -58,22 +78,23 @@ class Constant(Literal):
     def __eq__(self, other) -> bool:
         if isinstance(other, Constant):
             return self.value == other.value
-        elif isinstance(other, Negation):
+        elif isinstance(other, LiteralNegation):
             return other.__eq__(self)
         return False
 
     def __hash__(self) -> int:
         return hash(self.value)
 
-class Negation(Literal):
+
+class LiteralNegation(Literal):
 
     def __init__(self, literal: Literal) -> None:
-        super().__init__()
+        super().__init__(literal.name)
         self.__literal = literal
 
     @staticmethod
-    def from_copy(other: 'Negation') -> 'Negation':
-        return Negation(other.__literal)
+    def from_copy(other: 'LiteralNegation') -> 'LiteralNegation':
+        return LiteralNegation(other.__literal)
 
     def synthesize(self, synthesizer: Synthesizer) -> Any:
         return synthesizer.synthesize_negation(
@@ -86,25 +107,25 @@ class Negation(Literal):
     def __hash__(self) -> str:
         return -hash(self.__literal)
 
+    def __neg__(self) -> Literal:
+        return self.__literal
+
     def __eq__(self, other: Literal) -> bool:
         if isinstance(self.__literal, Constant):
             return self.__literal != other
-        elif isinstance(other, Negation):
+        elif isinstance(other, LiteralNegation):
             return self.__literal == other.__literal
         return False
+        
 
 class Variable(Literal):
     def __init__(self, name: str) -> None:
-        super().__init__()
+        super().__init__(name)
         self.__name = name
 
     @staticmethod
     def from_copy(other: 'Variable') -> 'Variable':
         return Variable(other.name)
-
-    @property
-    def name(self) -> str:
-        return self.__name
 
     def synthesize(self, synthesizer: Synthesizer) -> Any:
         return synthesizer.synthesize_variable(self.name)
@@ -120,9 +141,10 @@ class Variable(Literal):
             return self.name == other.name
         return False
 
+
 class Disjunction(Formula):
 
-    def __init__(self, subformulae: Collection[Formula]) -> None:
+    def __init__(self, subformulae: Iterable[Formula]) -> None:
         super().__init__()
         self.__children = frozenset(subformulae)
 
@@ -149,9 +171,6 @@ class Disjunction(Formula):
     def synthesize(self, synthesizer: Synthesizer) -> Any:
         raise NotImplementedError()
 
-    def to_cnf(self, synthesizer: Synthesizer) -> 'CNF':
-        raise NotImplementedError()
-
     def __str__(self) -> str:
         substrings = [str(formula) for formula in self.subformulae]
         return "({})".format(" + ".join(substrings))
@@ -164,9 +183,17 @@ class Disjunction(Formula):
             return self.subformulae == other.subformulae
         return False
 
+    def tseytin_transform(self) -> Tuple['Literal', 'CNF']:
+        s = Variable('__ts_dis_{}'.format(hash(self)))
+        t_phis, cnfs = zip(*[phi.tseytin_transform() for phi in self.subformulae])
+        cnf = CNF([Clause(t_phis) + -s])
+        cnf = reduce(lambda x, y: x * (s + -y), t_phis, cnf)
+        cnf = reduce(lambda x, y: x * y, cnfs, cnf)
+        return s, cnf
+
 class Clause(Disjunction):
 
-    def __init__(self, literals: Collection[Literal]) -> None:
+    def __init__(self, literals: Iterable[Literal]) -> None:
         super().__init__(literals)
 
     @staticmethod
@@ -202,7 +229,7 @@ class Clause(Disjunction):
 
 class Conjunction(Formula):
 
-    def __init__(self, subformulae: Collection[Formula]) -> None:
+    def __init__(self, subformulae: Iterable[Formula]) -> None:
         super().__init__()
         self.__children = frozenset(subformulae)
 
@@ -229,9 +256,6 @@ class Conjunction(Formula):
     def synthesize(self, synthesizer: Synthesizer) -> Any:
         raise NotImplementedError()
 
-    def to_cnf(self, synthesizer: Synthesizer) -> 'CNF':
-        raise NotImplementedError()
-
     def __str__(self) -> str:
         substrings = [str(formula) for formula in self.subformulae]
         return "({})".format(" * ".join(substrings))
@@ -244,10 +268,20 @@ class Conjunction(Formula):
             return self.subformulae == other.subformulae
         return False
 
+    def tseytin_transform(self) -> Tuple['Literal', 'CNF']:
+        t_phis, cnfs = zip(*[phi.tseytin_transform() for phi in self.subformulae])
+        s = Variable('__ts_con_{}'.format(hash(self)))
+
+        cnf = CNF([Clause([s])])
+        cnf *= reduce(lambda x, y: x + -y, t_phis, s)
+        cnf *= reduce(lambda x, y: x * (-s + y), t_phis)
+
+        cnf *= reduce(lambda x, y: x * y, cnfs, cnf)
+        return s, cnf
 
 class CNF(Conjunction):
 
-    def __init__(self, clauses: Collection[Clause]) -> None:
+    def __init__(self, clauses: Iterable[Clause]) -> None:
         super().__init__(clauses)
 
     @staticmethod
@@ -257,14 +291,6 @@ class CNF(Conjunction):
     @property
     def clauses(self) -> Collection[Clause]:
         return self.subformulae
-
-    def synthesize(self, synthesizer: Synthesizer) -> Any:
-        return synthesizer.synthesize_cnf(
-            clause.synthesize(synthesizer) for clause in self.clauses
-        )
-
-    def to_cnf(self) -> 'CNF':
-        return self
 
     def __mul__(self, other: Union[Literal, Clause, 'CNF']) -> 'CNF':
         clauses = set(self.clauses)
@@ -278,3 +304,52 @@ class CNF(Conjunction):
             raise TypeError()
 
         return CNF(clauses)
+
+    def synthesize(self, synthesizer: Synthesizer) -> Any:
+        return synthesizer.synthesize_cnf(
+            clause.synthesize(synthesizer) for clause in self.clauses
+        )
+
+    def to_cnf(self) -> 'CNF':
+        return self
+
+
+class FormulaNegation(Formula):
+
+    def __init__(self, formula: Formula) -> None:
+        super().__init__()
+        self.__formula = formula
+
+    @staticmethod
+    def from_copy(other: 'FormulaNegation') -> 'FormulaNegation':
+        return FormulaNegation(other.formula)
+
+    @property
+    def formula(self) -> Formula:
+        return self.__formula
+
+    def __neg__(self) -> Formula:
+        return self.formula
+
+    def synthesize(self, synthesizer: Synthesizer) -> Any:
+        raise NotImplementedError()
+
+    def tseytin_transform(self) -> Tuple[Literal, 'CNF']:
+        t, cnfs = self.formula.tseytin_transform()
+
+        s = Variable('__ts_{}'.format(hash(self)))
+        cnf = CNF([
+            -s + -t, s + t
+        ])
+        return reduce(lambda x, y: x * y, cnfs, cnf)
+
+    def __str__(self) -> str:
+        return "~{}".format(self.formula)
+
+    def __hash__(self) -> str:
+        return -hash(self.formula)
+
+    def __eq__(self, other: Literal) -> bool:
+        if isinstance(other, FormulaNegation):
+            return self.formula == other.formula
+        return False
