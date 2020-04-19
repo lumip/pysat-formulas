@@ -121,21 +121,12 @@ class EqVarTerm(Literal):
         return self.__rhs
 
     def tseytin_transform(self) -> Tuple[Literal, CNF]:
-        olb = min(self.lhs.min, self.rhs.min)
-        oub = max(self.lhs.max, self.rhs.max) + 1
         ilb = max(self.lhs.min, self.rhs.min)
         iub = min(self.lhs.max, self.rhs.max) + 1
 
         formula = Disjunction(
-            Equivalence(EqConstTerm(self.lhs, c), EqConstTerm(self.rhs, c)) for c in range(ilb, iub)
+            (EqConstTerm(self.lhs, c) * EqConstTerm(self.rhs, c)) for c in range(ilb, iub)
         )
-        formula += Disjunction([
-            *[-EqConstTerm(self.lhs, c) for c in range(olb, self.lhs.min)],
-            *[-EqConstTerm(self.lhs, c) for c in range(self.lhs.max+1, oub)],
-            *[-EqConstTerm(self.rhs, c) for c in range(olb, self.rhs.min)],
-            *[-EqConstTerm(self.rhs, c) for c in range(self.rhs.max+1, oub)],
-        ])
-
         return formula.tseytin_transform()
 
     def synthesize(self, synthesizer: Synthesizer) -> Any:
