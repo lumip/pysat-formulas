@@ -22,6 +22,9 @@ class IntVariable:
     def name(self) -> str:
         return self.__name
 
+    def is_valid_value(self, value: int) -> bool:
+        return value >= self.__min and value <= self.__max
+
     def __str__(self) -> str:
         return self.name
 
@@ -32,27 +35,6 @@ class IntVariable:
         if isinstance(other, IntVariable):
             return self.name == other.name
         return False
-
-    # def tseytin_transform(self) -> Tuple[Literal, CNF]:
-    #     values_syn = (EqConstTerm(self, v) for v in range(self.min, self.max + 1))
-        
-    #     def no_other_means_one(x: Literal, ys: Iterable[Literal]) -> CNF:
-    #         formula = CNF([])
-    #         for y in ys:
-    #             formula *= (-y + -x)
-    #         return formula
-
-    #     def only_one(xs: Iterable[Literal]) -> CNF:
-    #         xs = frozenset(xs)
-    #         formula = CNF([])
-    #         for x in xs:
-    #             ys = [y for y in xs if y != x]
-    #             formula *= no_other_means_one(x, ys)
-    #         formula *= Clause(xs)
-    #         return formula
-
-    #     formula = only_one(values_syn)
-    #     return formula
 
     def get_specification(self) -> CNF:
         values_syn = (EqConstTerm(self, v) for v in range(self.min, self.max + 1))
@@ -79,6 +61,8 @@ class EqConstTerm(Literal):
 
     def __init__(self, var: IntVariable, val: int) -> None:
         super().__init__("{}=={}".format(var.name, val))
+        if (not var.is_valid_value(val)):
+            raise ValueError("Value {} is out of range ({}, {}) for variable {}".format(val, var.min, var.max, var))
         self.__var = var
         self.__val = val
 
