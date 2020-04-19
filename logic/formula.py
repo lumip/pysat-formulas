@@ -273,12 +273,14 @@ class Conjunction(Formula):
         return False
 
     def tseytin_transform(self) -> Tuple['Literal', 'CNF']:
-        t_phis, cnfs = zip(*[phi.tseytin_transform() for phi in self.subformulae])
         s = Variable('__ts_con_{}'.format(hash(self)))
+        if len(self) == 0:
+            return s, CNF([])
+
+        t_phis, cnfs = zip(*[phi.tseytin_transform() for phi in self.subformulae])
 
         cnf = reduce(lambda x, t: x + -t, t_phis, s) # s -> self
-        cnf *= reduce(lambda x, t: x * (-s + t), t_phis) # self -> s
-
+        cnf = reduce(lambda x, t: x * (-s + t), t_phis, cnf) # self -> s
         cnf = reduce(lambda x, y: x * y, cnfs, cnf)
         assert(isinstance(cnf, CNF))
         return s, cnf
@@ -339,13 +341,14 @@ class FormulaNegation(Formula):
         raise NotImplementedError()
 
     def tseytin_transform(self) -> Tuple[Literal, 'CNF']:
-        t, cnfs = self.formula.tseytin_transform()
+        t, sub_cnf = self.formula.tseytin_transform()
 
-        s = Variable('__ts_{}'.format(hash(self)))
+        s = Variable('__ts_neg_{}'.format(hash(self)))
         cnf = CNF([
             -s + -t, s + t
         ])
-        return reduce(lambda x, y: x * y, cnfs, cnf)
+        cnf *= sub_cnf
+        return s, cnf
 
     def __str__(self) -> str:
         return "~{}".format(self.formula)
